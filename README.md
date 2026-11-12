@@ -16,17 +16,21 @@ Options > Mods > Map Preview > Settings. Each button steps through its values.
 |---|---|---|
 | Tooltip preview | OFF, Always, Hold Shift | Always |
 | Tooltip size | Small (64), Medium (96), Large (128 GUI pixels) | Medium |
+| Tooltip background | OFF, Paper, Map background | Map background |
 | Slot preview | OFF, ON | ON |
-| Slot style | Full slot, With paper edge | With paper edge |
-| Paper behind the map | OFF, ON | ON |
+| Slot style | Full slot, Border, As map item | As map item |
+| Slot resolution | Pixelated, High | High |
+| Locked map glass | OFF, ON | ON |
 | Reset to defaults | | |
 
 ## Good to know
 
-- A preview needs the map's picture on your client. The server sends it for maps you carry (as vanilla does), so
-  your own maps always show. A map you have never carried, in a chest on a server, may show no preview until you
-  pick it up once.
+- Maps show their preview as soon as your game knows what's drawn on them. Any map you've held in
+  your inventory or seen displayed in an item frame will show its preview right away. If you ever 
+  find a map in a chest without a preview, simply pick it up once to load its picture.
 - Maps update live: explore with a map and its preview fills in.
+- In "As map item" mode, the map frame automatically matches the resolution of your active resource pack (16×16, 32×32, or 64×64).
+- Locked maps show a Bedrock-style glass sheen in inventory slots when "Locked map glass" is enabled, but this isn't tied to the resolution of your resource pack.
 
 ## Install
 
@@ -46,13 +50,13 @@ Horizon has no hook point that gives a mod a map's pixels, so besides hook point
 | File | What it is |
 |---|---|
 | `mixins/map_preview/horizon-mixin.toml` | The bundle: one module and its HEAD hooks |
-| `mixins/map_preview/runtime.rs` | The settings, the map colours and the picture as rectangles; also this crate's library, for its tests |
+| `mixins/map_preview/runtime.rs` | The settings, map colours, picture runs as rectangles and rotated quads, and frame/overlay pixel data; also this crate's library, for its tests |
 | `measure.rs`, `draw.rs` | The tooltip picture (`native_tooltip_component` and `native_tooltip_component_draw`) |
 | `slot.rs` | The slot picture (`native_item_decorations`) |
 | `key.rs` | Follows Shift, for "Hold Shift" |
 | `list.rs`, `settings.rs`, `click.rs` | The Options > Mods page |
 
-Pictures are drawn as filled rectangles, one per run of same-coloured pixels in a row. The mod only reads map data the
+Pictures are drawn as filled rectangles or rotated quadrilaterals, one per run of same-coloured pixels in a row. The mod only reads map data the
 client already has; it has no network, file or process access beyond Horizon's own settings files for the mod.
 
 ```sh
@@ -64,6 +68,10 @@ cargo test    # colours, picture layout and settings
 Inspired by [Map Tooltip](https://modrinth.com/mod/map-tooltip) by VendoAU and
 [Map In Slot](https://modrinth.com/mod/map-in-slot) by Crec0. Map Preview is written from scratch for Horizon and
 contains none of their code or assets; it is not made or endorsed by them.
+
+Item map overlays and rotation rendering layout designed and contributed by [FitchWorks](https://github.com/FitchWorks).
+
+Map overlay/framing assets are inspired by vanilla Minecraft by Mojang Studios and adapted from [Faithful](https://faithfulpack.net) by the Faithful Team under the [Faithful Project License](https://faithfulpack.net/license).
 
 ## License
 

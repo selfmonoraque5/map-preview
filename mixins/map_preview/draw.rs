@@ -21,9 +21,34 @@ fn map_preview_draw(
         return;
     };
     let settings = m::settings(|key| game.native_setting(m::ID, key));
-    let paper = settings.get(m::o::PAPER) == 1;
+    let bg = settings.get(m::o::PAPER);
+    let top = [origin[0], origin[1] + m::TOOLTIP_GAP];
+    let side = settings.tooltip_side(true).unwrap_or(size[0]);
+
+    let (map_at, map_side) = if bg == 2 {
+        let pad = m::tooltip_pad(side);
+        let total = side + 2.0 * pad;
+        let [sw, sh] = game.native_sprite_size("map/map_background_checkerboard")
+            .unwrap_or([64.0, 64.0]);
+        if !game.native_sprite(
+            batch,
+            "map/map_background_checkerboard",
+            [0.0, 0.0, sw, sh],
+            [top[0], top[1], total, total],
+        ) {
+            game.native_fill(batch, [top[0], top[1], total, total], m::PAPER);
+        }
+        ([top[0] + pad, top[1] + pad], side)
+    } else {
+        if bg == 1 {
+            game.native_fill(batch, [top[0], top[1], side, side], m::PAPER);
+        }
+        (top, side)
+    };
+
     let palette = &horizon_client::blocks::MAP_COLORS;
-    for (rect, argb) in m::tooltip_rects(&map.colors, palette, origin, size[0], paper) {
+    let cells = (map_side.round() as usize).min(m::MAP_SIZE);
+    for (rect, argb) in m::picture(&map.colors, palette, map_at, map_side, cells) {
         game.native_fill(batch, rect, argb);
     }
 }

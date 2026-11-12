@@ -20,7 +20,8 @@ fn map_preview_measure(
     let Some(side) = settings.tooltip_side(m::shift()) else {
         return;
     };
-    let space = m::tooltip_space(side);
+    let bg = settings.get(m::o::PAPER);
+    let space = m::tooltip_space(side, bg == 2);
     *size = Some(space);
     m::claim(id, space);
 }
