@@ -84,7 +84,7 @@ impl ItemPart for FilledMap {
         let settings = m::current();
         let side = settings.tooltip_side(host.modifiers().shift())?;
         let space = m::tooltip_space(side, settings.get(m::o::PAPER) == 2);
-        m::claim(id, space);
+        m::claim(id);
         Some(space)
     }
 
@@ -93,9 +93,9 @@ impl ItemPart for FilledMap {
         let Some(id) = map_id(event.stack) else {
             return;
         };
-        // Only the space this mod asked for: another mod's tooltip part for
-        // the same map has its own.
-        if !m::claimed(id, event.size) {
+        // Only a tooltip this mod asked space for, for this map. Not by size:
+        // `event.size` is the whole tooltip's (the name lines too), not the picture's.
+        if !m::claimed(id) {
             return;
         }
         m::want(id);

@@ -855,9 +855,9 @@ pub struct MapPicture {
 #[derive(Default)]
 struct State {
     settings: Option<Settings>,
-    /// The map whose tooltip space was asked for this frame, and its size:
-    /// the draw hook only draws what this mod measured.
-    claimed: Option<(i32, [f32; 2])>,
+    /// The map whose tooltip space this mod asked for last: the draw hook
+    /// only draws a picture this mod reserved space for.
+    claimed: Option<i32>,
     /// The maps' colour palette (`MapColor.col`), from the game.
     palette: Vec<u32>,
     /// The pictures of the maps drawn lately, from the game.
@@ -887,13 +887,13 @@ pub fn set_settings(settings: Settings) {
 }
 
 /// The tooltip space this mod asked for map `id`.
-pub fn claim(id: i32, size: [f32; 2]) {
-    STATE.with_borrow_mut(|s| s.claimed = Some((id, size)));
+pub fn claim(id: i32) {
+    STATE.with_borrow_mut(|s| s.claimed = Some(id));
 }
 
-/// Whether the tooltip space `size` for map `id` is this mod's to draw in.
-pub fn claimed(id: i32, size: [f32; 2]) -> bool {
-    STATE.with_borrow(|s| s.claimed == Some((id, size)))
+/// Whether this mod asked tooltip space for map `id`, so the picture is its to draw.
+pub fn claimed(id: i32) -> bool {
+    STATE.with_borrow(|s| s.claimed == Some(id))
 }
 
 /// Map `id` is about to be drawn: the game patch hands its picture over next frame.
@@ -1215,10 +1215,9 @@ mod tests {
 
     #[test]
     fn claims_and_the_maps_handed_over() {
-        claim(7, [96.0, 98.0]);
-        assert!(claimed(7, [96.0, 98.0]));
-        assert!(!claimed(8, [96.0, 98.0]));
-        assert!(!claimed(7, [64.0, 66.0]));
+        claim(7);
+        assert!(claimed(7));
+        assert!(!claimed(8));
         // Maps asked for are handed over by the game patch; the others are dropped.
         want(3);
         want(3);

@@ -1,6 +1,6 @@
 id = "map_preview"
 name = "Map Preview"
-version = "2.0.3"
+version = "2.0.4"
 description = "See a map's picture in its tooltip and in its inventory slot, so you can tell your maps apart."
 authors = ["selfmonoraque5", "FitchWorks"]
 license = "MIT"
