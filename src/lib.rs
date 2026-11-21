@@ -93,6 +93,11 @@ impl ItemPart for FilledMap {
         let Some(id) = map_id(event.stack) else {
             return;
         };
+        // Only the space this mod asked for: another mod's tooltip part for
+        // the same map has its own.
+        if !m::claimed(id, event.size) {
+            return;
+        }
         m::want(id);
         let settings = m::current();
         let Some(side) = settings.tooltip_side(true) else {
@@ -151,7 +156,7 @@ impl ItemPart for FilledMap {
             if style == 2 && !item_rects.is_empty() {
                 let (paper, paper_color) = m::tilted_paper_quad([x, y]);
                 draw.quad(paper, paper_color);
-                let cells = if high_res { m::MAP_SIZE } else { 13 };
+                let cells = if high_res { m::SLOT_HIGH_CELLS } else { 13 };
                 for (quad, argb) in m::tilted_picture(&map.colors, palette, [x, y], cells) {
                     draw.quad(quad, argb);
                 }

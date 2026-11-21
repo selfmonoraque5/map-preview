@@ -18,6 +18,9 @@ pub const ID: &str = "map_preview";
 
 /// A map's side, in pixels.
 pub const MAP_SIZE: usize = 128;
+/// Cells per side of a "High" slot picture: a 16 px slot is 64 screen pixels
+/// at GUI scale 4, so more cells than this draw nothing finer, only slower.
+pub const SLOT_HIGH_CELLS: usize = 64;
 /// The map paper behind the picture (vanilla's map background).
 pub const PAPER: u32 = 0xFF_DCC9A0;
 /// The paper's darker edge.
@@ -264,7 +267,7 @@ pub fn slot_rects(
     if paper || edged {
         rects.push(([inner[0], inner[1], side, side], PAPER));
     }
-    let cells = if high_res { MAP_SIZE } else { side as usize };
+    let cells = if high_res { SLOT_HIGH_CELLS } else { side as usize };
     rects.extend(picture(colors, palette, inner, side, cells));
     rects
 }
@@ -1069,7 +1072,7 @@ mod tests {
         assert_eq!(full[0], ([0.0, 0.0, 8.0, 1.0], 0xFF7F_B238));
 
         let high = slot_rects(&colors, &PALETTE, [0.0, 0.0], false, false, true);
-        assert_eq!(high.len(), 128);
+        assert_eq!(high.len(), SLOT_HIGH_CELLS, "one run per row of a two-colour map");
     }
 
     #[test]
