@@ -1,6 +1,6 @@
 id = "map_preview"
 name = "Map Preview"
-version = "2.0.1"
+version = "2.0.2"
 description = "See a map's picture in its tooltip and in its inventory slot, so you can tell your maps apart."
 authors = ["selfmonoraque5", "FitchWorks"]
 license = "MIT"
@@ -14,7 +14,7 @@ capabilities = ["registries"]
 
 [native]
 game = "26.3"
-horizon = "5ef7734fdd854add5efd6817178be3c988d8d050"
+horizon = "8f83e5c85ae3b9a117f742e8d91170c5c9080a06"
 mixins = "e59da9094f0c2fdda6c627fe9eff22dec6a906f0"
 
 # The mod API doesn't show a client mod a map's pixels, so the mod patches the
