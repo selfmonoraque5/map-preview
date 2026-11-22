@@ -41,7 +41,7 @@ It patches the game, so it builds only on that exact Horizon build: if the launc
 
 From GitHub:
 
-1. Download `map_preview-2.0.4.hmod` from the [latest release](https://github.com/selfmonoraque5/map-preview/releases/latest).
+1. Download `map_preview-2.0.5.hmod` from the [latest release](https://github.com/selfmonoraque5/map-preview/releases/latest).
 2. Put it in the `horizon-native-mods` folder of your game folder, not in `mods`. On Windows that is
    `%APPDATA%\horizon\horizon-native-mods`.
 3. In the launcher, open the Mods page and click **Build** (the first build downloads the mod SDK and takes a few
