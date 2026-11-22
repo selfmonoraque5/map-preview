@@ -6,6 +6,8 @@ See what's on a map without holding it. Hover a filled map and its picture shows
 hotbar, inventory and chests shows a small copy of its picture instead of the plain map icon, so you can tell them
 apart at a glance.
 
+<p align="center"><img src="screenshots/tooltip-f037744.png" width="49%" alt="A map's picture in its tooltip"> <img src="screenshots/inventory.jpg" width="49%" alt="An inventory of maps, each showing its picture"></p>
+
 Client side only: it works in single player and on any server.
 
 ## Settings
@@ -35,7 +37,7 @@ Options > Mods > Map Preview > **Config**. Each button steps through its values.
 
 ## Install
 
-Made for Horizon **Nightly 2026-11-21 · f037744**.
+Made for Horizon **Nightly 2026-11-22 · 2b77287**.
 It patches the game, so it builds only on that exact Horizon build: if the launcher lists it as
 **Left out**, switch your instance to that Nightly, or wait for the version made for yours.
 
