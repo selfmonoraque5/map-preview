@@ -20,13 +20,16 @@ pub const ID: &str = "map_preview";
 pub const MAP_SIZE: usize = 128;
 /// Cells per side of a "High" slot picture: a 16 px slot is 64 screen pixels
 /// at GUI scale 4, so more cells than this draw nothing finer, only slower.
+/// We sample discrete palette colours rather than box-averaging/subsampling so
+/// adjacent pixels stay identical and merge into fewer horizontal/vertical runs.
 pub const SLOT_HIGH_CELLS: usize = 64;
 /// The map paper behind the picture (vanilla's map background).
 pub const PAPER: u32 = 0xFF_DCC9A0;
 /// The paper's darker edge.
 pub const PAPER_EDGE: u32 = 0xFF_9C8459;
-/// Space above the tooltip picture, in GUI pixels.
-pub const TOOLTIP_GAP: f32 = 2.0;
+/// Space reserved below the map in a tooltip so it clears the line beneath
+/// while sitting cleanly under Horizon's 2px title gap.
+pub const TOOLTIP_GAP: f32 = 4.0;
 /// A slot's icon, in GUI pixels.
 pub const SLOT_SIZE: f32 = 16.0;
 /// Map rotation in inventory slot as a map item: +8 degrees around the slot centre.
@@ -177,24 +180,46 @@ pub type FrameRun = (u16, u16, u16, u32);
 
 /// The map's picture at `[x, y]`, `side` GUI pixels square, sampled to
 /// `cells` x `cells` (each the map pixel at its centre), as rectangles: one
-/// per run of same-coloured cells in a row. Empty pixels are left out.
+/// per merged run of same-coloured cells. Empty pixels are left out.
 pub fn picture(colors: &[u8], palette: &[u32], at: [f32; 2], side: f32, cells: usize) -> Vec<Rect> {
-    let mut rects = Vec::new();
+    let mut rects: Vec<Rect> = Vec::new();
     if colors.len() < MAP_SIZE * MAP_SIZE || cells == 0 {
         return rects;
     }
     let cell = side / cells as f32;
     let source = |c: usize| (c * MAP_SIZE + MAP_SIZE / 2) / cells;
+    // Merge identical horizontal runs vertically across adjacent rows.
+    let mut prev_runs: Vec<(usize, usize, u32, usize)> = Vec::new();
+    let mut cur_runs: Vec<(usize, usize, u32, usize)> = Vec::new();
     for row in 0..cells {
         let sy = source(row);
         let mut run: Option<(usize, u32)> = None;
+        let mut prev_idx = 0;
+        cur_runs.clear();
         for col in 0..=cells {
             let color = (col < cells).then(|| argb(colors[sy * MAP_SIZE + source(col)], palette)).flatten();
             match run {
                 Some((_, c)) if Some(c) == color => continue,
                 Some((start, c)) => {
-                    let x = at[0] + start as f32 * cell;
-                    rects.push(([x, at[1] + row as f32 * cell, (col - start) as f32 * cell, cell], c));
+                    while prev_idx < prev_runs.len() && prev_runs[prev_idx].0 < start {
+                        prev_idx += 1;
+                    }
+                    let idx = if prev_idx < prev_runs.len()
+                        && prev_runs[prev_idx].0 == start
+                        && prev_runs[prev_idx].1 == col
+                        && prev_runs[prev_idx].2 == c
+                    {
+                        let idx = prev_runs[prev_idx].3;
+                        rects[idx].0[3] += cell;
+                        prev_idx += 1;
+                        idx
+                    } else {
+                        let idx = rects.len();
+                        let x = at[0] + start as f32 * cell;
+                        rects.push(([x, at[1] + row as f32 * cell, (col - start) as f32 * cell, cell], c));
+                        idx
+                    };
+                    cur_runs.push((start, col, c, idx));
                     run = None;
                 }
                 None => {}
@@ -203,6 +228,7 @@ pub fn picture(colors: &[u8], palette: &[u32], at: [f32; 2], side: f32, cells: u
                 run = Some((col, c));
             }
         }
+        std::mem::swap(&mut prev_runs, &mut cur_runs);
     }
     rects
 }
@@ -228,18 +254,17 @@ pub fn tooltip_space(side: f32, framed: bool) -> [f32; 2] {
 /// fallback), then the map.
 #[allow(dead_code)]
 pub fn tooltip_rects(colors: &[u8], palette: &[u32], at: [f32; 2], side: f32, bg: u16) -> Vec<Rect> {
-    let top = [at[0], at[1] + TOOLTIP_GAP];
     let mut rects = Vec::new();
     let (map_at, map_side) = if bg == 2 {
         let pad = tooltip_pad(side);
         let total = side + 2.0 * pad;
-        rects.push(([top[0], top[1], total, total], PAPER));
-        ([top[0] + pad, top[1] + pad], side)
+        rects.push(([at[0], at[1], total, total], PAPER));
+        ([at[0] + pad, at[1] + pad], side)
     } else {
         if bg == 1 {
-            rects.push(([top[0], top[1], side, side], PAPER));
+            rects.push(([at[0], at[1], side, side], PAPER));
         }
-        (top, side)
+        (at, side)
     };
     // One cell per GUI pixel at most: a map pixel smaller than that is lost anyway.
     let cells = (map_side.round() as usize).min(MAP_SIZE);
@@ -312,9 +337,14 @@ pub fn tilted_picture(
     let cell = MAP_ITEM_INNER_SIZE / cells as f32;
     let source = |c: usize| (c * MAP_SIZE + MAP_SIZE / 2) / cells;
 
+    // Merge identical horizontal runs vertically across adjacent rows.
+    let mut prev_runs: Vec<(usize, usize, u32, usize)> = Vec::new();
+    let mut cur_runs: Vec<(usize, usize, u32, usize)> = Vec::new();
     for row in 0..cells {
         let sy = source(row);
         let mut run: Option<(usize, u32)> = None;
+        let mut prev_idx = 0;
+        cur_runs.clear();
         for col in 0..=cells {
             let color = (col < cells)
                 .then(|| argb(colors[sy * MAP_SIZE + source(col)], palette))
@@ -322,17 +352,35 @@ pub fn tilted_picture(
             match run {
                 Some((_, c)) if Some(c) == color => continue,
                 Some((start, c)) => {
-                    let x0 = origin[0] + start as f32 * cell;
-                    let x1 = origin[0] + col as f32 * cell;
+                    while prev_idx < prev_runs.len() && prev_runs[prev_idx].0 < start {
+                        prev_idx += 1;
+                    }
                     let y0 = origin[1] + row as f32 * cell;
                     let y1 = origin[1] + (row + 1) as f32 * cell;
-                    let corners = [
-                        rotate_point([x0, y0], center, sin, cos),
-                        rotate_point([x1, y0], center, sin, cos),
-                        rotate_point([x1, y1], center, sin, cos),
-                        rotate_point([x0, y1], center, sin, cos),
-                    ];
-                    quads.push((corners, c));
+                    let x0 = origin[0] + start as f32 * cell;
+                    let x1 = origin[0] + col as f32 * cell;
+                    let idx = if prev_idx < prev_runs.len()
+                        && prev_runs[prev_idx].0 == start
+                        && prev_runs[prev_idx].1 == col
+                        && prev_runs[prev_idx].2 == c
+                    {
+                        let idx = prev_runs[prev_idx].3;
+                        quads[idx].0[2] = rotate_point([x1, y1], center, sin, cos);
+                        quads[idx].0[3] = rotate_point([x0, y1], center, sin, cos);
+                        prev_idx += 1;
+                        idx
+                    } else {
+                        let idx = quads.len();
+                        let corners = [
+                            rotate_point([x0, y0], center, sin, cos),
+                            rotate_point([x1, y0], center, sin, cos),
+                            rotate_point([x1, y1], center, sin, cos),
+                            rotate_point([x0, y1], center, sin, cos),
+                        ];
+                        quads.push((corners, c));
+                        idx
+                    };
+                    cur_runs.push((start, col, c, idx));
                     run = None;
                 }
                 None => {}
@@ -341,6 +389,7 @@ pub fn tilted_picture(
                 run = Some((col, c));
             }
         }
+        std::mem::swap(&mut prev_runs, &mut cur_runs);
     }
     quads
 }
@@ -852,6 +901,21 @@ pub struct MapPicture {
     pub locked: bool,
 }
 
+#[derive(Clone)]
+enum CachedSlot {
+    Quads(Vec<Quad>),
+    Rects(Vec<Rect>),
+}
+
+fn colors_hash(colors: &[u8]) -> u64 {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for &b in colors {
+        h ^= u64::from(b);
+        h = h.wrapping_mul(0x0100_0000_01b3);
+    }
+    h
+}
+
 #[derive(Default)]
 struct State {
     settings: Option<Settings>,
@@ -860,10 +924,13 @@ struct State {
     claimed: Option<i32>,
     /// The maps' colour palette (`MapColor.col`), from the game.
     palette: Vec<u32>,
-    /// The pictures of the maps drawn lately, from the game.
+    /// Cached pictures of maps seen lately, from the game (retained across frames
+    /// so hovering between items never drops a frame or collapses the tooltip).
     maps: HashMap<i32, MapPicture>,
+    /// Unit-origin (`[0.0, 0.0]`) slot geometry keyed by `(map_id, style_key)`.
+    slot_cache: HashMap<(i32, u8), (u64, CachedSlot)>,
     /// The maps asked for since the game patch last ran: it hands over their
-    /// pictures (and drops the ones nobody asked for).
+    /// pictures next frame.
     wanted: HashSet<i32>,
     /// The resource packs' revision the frames were made from.
     sprites_revision: Option<u64>,
@@ -909,14 +976,93 @@ pub fn take_wanted() -> Vec<i32> {
 }
 
 /// What the game patch hands over: the palette (once), and the pictures of
-/// the maps asked for (`maps`); the others are dropped.
+/// the maps asked for (`maps`); previously seen maps are kept cached so
+/// moving the cursor between map items never drops a frame.
 pub fn set_maps(palette: &[u32], maps: Vec<(i32, MapPicture)>) {
     STATE.with_borrow_mut(|s| {
         if s.palette.is_empty() {
             s.palette = palette.to_vec();
         }
-        s.maps = maps.into_iter().collect();
+        if s.maps.len() > 512 {
+            let keep: HashSet<i32> = maps.iter().map(|(id, _)| *id).collect();
+            s.maps.retain(|id, _| keep.contains(id));
+            s.slot_cache.retain(|(id, _), _| keep.contains(id));
+        }
+        for (id, pic) in maps {
+            let changed = s.maps.get(&id).is_none_or(|old| old.colors != pic.colors);
+            if changed {
+                s.slot_cache.retain(|&(cid, _), _| cid != id);
+            }
+            s.maps.insert(id, pic);
+        }
     });
+}
+
+/// Draws a cached tilted slot picture at `at` (rebuilding only if map colors
+/// changed or the style was not yet cached). Returns `None` if `id` is not cached.
+pub fn with_tilted_slot(
+    id: i32,
+    at: [f32; 2],
+    cells: usize,
+    mut draw: impl FnMut([[f32; 2]; 4], u32),
+) -> Option<()> {
+    STATE.with_borrow_mut(|s| {
+        let map = s.maps.get(&id)?;
+        let hash = colors_hash(&map.colors);
+        let style_key = 0x80 | u8::from(cells == SLOT_HIGH_CELLS);
+        let entry = s.slot_cache.get(&(id, style_key)).filter(|(h, _)| *h == hash);
+        if entry.is_none() {
+            if s.slot_cache.len() > 256 {
+                s.slot_cache.clear();
+            }
+            let quads = tilted_picture(&map.colors, &s.palette, [0.0, 0.0], cells);
+            s.slot_cache.insert((id, style_key), (hash, CachedSlot::Quads(quads)));
+        }
+        if let Some((_, CachedSlot::Quads(quads))) = s.slot_cache.get(&(id, style_key)) {
+            for &(pts, argb) in quads {
+                draw(
+                    [
+                        [pts[0][0] + at[0], pts[0][1] + at[1]],
+                        [pts[1][0] + at[0], pts[1][1] + at[1]],
+                        [pts[2][0] + at[0], pts[2][1] + at[1]],
+                        [pts[3][0] + at[0], pts[3][1] + at[1]],
+                    ],
+                    argb,
+                );
+            }
+        }
+        Some(())
+    })
+}
+
+/// Draws a cached flat/edged slot picture at `at`. Returns `None` if `id` is not cached.
+pub fn with_flat_slot(
+    id: i32,
+    at: [f32; 2],
+    edged: bool,
+    paper: bool,
+    high_res: bool,
+    mut draw: impl FnMut([f32; 4], u32),
+) -> Option<()> {
+    STATE.with_borrow_mut(|s| {
+        let map = s.maps.get(&id)?;
+        let hash = colors_hash(&map.colors);
+        let style_key = u8::from(edged) | (u8::from(paper) << 1) | (u8::from(high_res) << 2);
+        let entry = s.slot_cache.get(&(id, style_key)).filter(|(h, _)| *h == hash);
+        if entry.is_none() {
+            if s.slot_cache.len() > 256 {
+                s.slot_cache.clear();
+            }
+            let rects = slot_rects(&map.colors, &s.palette, [0.0, 0.0], edged, paper, high_res);
+            s.slot_cache.insert((id, style_key), (hash, CachedSlot::Rects(rects)));
+        }
+        if let Some((_, CachedSlot::Rects(rects))) = s.slot_cache.get(&(id, style_key)) {
+            for &(r, argb) in rects {
+                draw([r[0] + at[0], r[1] + at[1], r[2], r[3]], argb);
+            }
+        }
+        Some(())
+    })
 }
 
 /// Map `id`'s picture and the palette, if the client has it.
@@ -1036,9 +1182,9 @@ mod tests {
         // Left half grass, right half water.
         let colors = map(|x, _| if x < 64 { 1 << 2 | 2 } else { 2 << 2 | 2 });
         let rects = picture(&colors, &PALETTE, [10.0, 20.0], 64.0, 64);
-        assert_eq!(rects.len(), 128, "two runs a row");
-        assert_eq!(rects[0], ([10.0, 20.0, 32.0, 1.0], 0xFF7F_B238));
-        assert_eq!(rects[1], ([42.0, 20.0, 32.0, 1.0], 0xFF40_40FF));
+        assert_eq!(rects.len(), 2, "two merged columns");
+        assert_eq!(rects[0], ([10.0, 20.0, 32.0, 64.0], 0xFF7F_B238));
+        assert_eq!(rects[1], ([42.0, 20.0, 32.0, 64.0], 0xFF40_40FF));
         // An empty map: nothing but the paper.
         assert!(picture(&map(|_, _| 0), &PALETTE, [0.0; 2], 64.0, 64).is_empty());
         assert!(picture(&[1, 2, 3], &PALETTE, [0.0; 2], 64.0, 64).is_empty());
@@ -1050,29 +1196,29 @@ mod tests {
         let colors = map(|x, _| if x < 64 { 1 << 2 | 2 } else { 0 });
 
         let t_paper = tooltip_rects(&colors, &PALETTE, [5.0, 5.0], 96.0, 1);
-        assert_eq!(t_paper[0], ([5.0, 7.0, 96.0, 96.0], PAPER));
-        assert_eq!(t_paper[1], ([5.0, 7.0, 48.0, 1.0], 0xFF7F_B238));
+        assert_eq!(t_paper[0], ([5.0, 5.0, 96.0, 96.0], PAPER));
+        assert_eq!(t_paper[1], ([5.0, 5.0, 48.0, 96.0], 0xFF7F_B238));
 
         let t_framed = tooltip_rects(&colors, &PALETTE, [5.0, 5.0], 96.0, 2);
         assert_eq!(tooltip_pad(96.0), 5.0);
-        assert_eq!(t_framed[0], ([5.0, 7.0, 106.0, 106.0], PAPER));
-        assert_eq!(t_framed[1], ([10.0, 12.0, 48.0, 1.0], 0xFF7F_B238));
+        assert_eq!(t_framed[0], ([5.0, 5.0, 106.0, 106.0], PAPER));
+        assert_eq!(t_framed[1], ([10.0, 10.0, 48.0, 96.0], 0xFF7F_B238));
 
         let t_none = tooltip_rects(&colors, &PALETTE, [5.0, 5.0], 96.0, 0);
-        assert_eq!(t_none[0], ([5.0, 7.0, 48.0, 1.0], 0xFF7F_B238));
-        assert_eq!(tooltip_space(96.0, false), [96.0, 98.0]);
-        assert_eq!(tooltip_space(96.0, true), [106.0, 108.0]);
+        assert_eq!(t_none[0], ([5.0, 5.0, 48.0, 96.0], 0xFF7F_B238));
+        assert_eq!(tooltip_space(96.0, false), [96.0, 100.0]);
+        assert_eq!(tooltip_space(96.0, true), [106.0, 110.0]);
 
         let s_edge = slot_rects(&colors, &PALETTE, [0.0, 0.0], true, false, false);
         assert_eq!(s_edge[0], ([0.0, 0.0, 16.0, 16.0], PAPER_EDGE));
         assert_eq!(s_edge[1], ([1.0, 1.0, 14.0, 14.0], PAPER));
-        assert_eq!(s_edge[2], ([1.0, 1.0, 7.0, 1.0], 0xFF7F_B238));
+        assert_eq!(s_edge[2], ([1.0, 1.0, 7.0, 14.0], 0xFF7F_B238));
 
         let full = slot_rects(&colors, &PALETTE, [0.0, 0.0], false, false, false);
-        assert_eq!(full[0], ([0.0, 0.0, 8.0, 1.0], 0xFF7F_B238));
+        assert_eq!(full[0], ([0.0, 0.0, 8.0, 16.0], 0xFF7F_B238));
 
         let high = slot_rects(&colors, &PALETTE, [0.0, 0.0], false, false, true);
-        assert_eq!(high.len(), SLOT_HIGH_CELLS, "one run per row of a two-colour map");
+        assert_eq!(high.len(), 1);
     }
 
     #[test]
@@ -1083,7 +1229,7 @@ mod tests {
 
         let colors = map(|_, _| 1 << 2 | 2);
         let quads = tilted_picture(&colors, &PALETTE, [10.0, 20.0], 13);
-        assert_eq!(quads.len(), 13);
+        assert_eq!(quads.len(), 1);
         assert_eq!(quads[0].1, 0xFF7F_B238);
     }
 
@@ -1230,8 +1376,7 @@ mod tests {
         assert_eq!(with_map(3, |m, palette| (m.colors.len(), m.locked, palette.len())), Some((9, true, 2)));
         assert!(with_map(5, |_, _| ()).is_none());
         set_maps(&[9], Vec::new());
-        assert!(with_map(3, |_, _| ()).is_none(), "not asked for again: dropped");
-        assert_eq!(with_map(3, |_, p| p.len()), None);
+        assert_eq!(with_map(3, |_, p| p.len()), Some(2), "cached map retained across frames");
     }
 
     #[test]

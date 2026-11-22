@@ -105,7 +105,7 @@ impl ItemPart for FilledMap {
         };
         let bg = settings.get(m::o::PAPER);
         let draw = &mut *event.draw;
-        let top = [event.origin[0], event.origin[1] + m::TOOLTIP_GAP];
+        let top = event.origin;
         m::with_map(id, |map, palette| {
             let (map_at, map_side) = if bg == 2 {
                 let pad = m::tooltip_pad(side);
@@ -146,8 +146,8 @@ impl ItemPart for FilledMap {
         let style = settings.get(m::o::SLOT_STYLE);
         let high_res = settings.get(m::o::SLOT_RES) == 1;
         let glass = settings.get(m::o::LOCKED_GLASS) == 1;
-        let drawn = m::with_map(id, |map, palette| {
-            let locked = glass && (map.locked || locking(event.stack));
+        let drawn = m::with_map(id, |map, _| map.locked).map(|map_locked| {
+            let locked = glass && (map_locked || locking(event.stack));
             let (item_rects, full_rects) = if style == 2 || locked {
                 m::slot_overlays([x, y], locked)
             } else {
@@ -157,9 +157,9 @@ impl ItemPart for FilledMap {
                 let (paper, paper_color) = m::tilted_paper_quad([x, y]);
                 draw.quad(paper, paper_color);
                 let cells = if high_res { m::SLOT_HIGH_CELLS } else { 13 };
-                for (quad, argb) in m::tilted_picture(&map.colors, palette, [x, y], cells) {
+                m::with_tilted_slot(id, [x, y], cells, |quad, argb| {
                     draw.quad(quad, argb);
-                }
+                });
                 for (rect, argb) in item_rects {
                     draw.fill(rect, argb);
                 }
@@ -167,9 +167,9 @@ impl ItemPart for FilledMap {
                 // "As map item" falls back to the full slot until the map's textures are in.
                 let edged = style != 0;
                 let paper = settings.get(m::o::PAPER) != 0;
-                for (rect, argb) in m::slot_rects(&map.colors, palette, [x, y], edged, paper, high_res) {
+                m::with_flat_slot(id, [x, y], edged, paper, high_res, |rect, argb| {
                     draw.fill(rect, argb);
-                }
+                });
                 for (rect, argb) in full_rects {
                     draw.fill(rect, argb);
                 }
