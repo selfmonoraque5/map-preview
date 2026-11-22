@@ -18,11 +18,13 @@ pub const ID: &str = "map_preview";
 
 /// A map's side, in pixels.
 pub const MAP_SIZE: usize = 128;
-/// Cells per side of a "High" slot picture: a 16 px slot is 64 screen pixels
-/// at GUI scale 4, so more cells than this draw nothing finer, only slower.
-/// We sample discrete palette colours rather than box-averaging/subsampling so
-/// adjacent pixels stay identical and merge into fewer horizontal/vertical runs.
-pub const SLOT_HIGH_CELLS: usize = 64;
+/// Cells per side of a "High" slot picture. Each cell's run is a quad the game
+/// draws every frame, and a full inventory of 64-cell maps dropped a test from
+/// ~108 to ~26 FPS; 32 (two cells per GUI pixel) keeps it sharp at a quarter
+/// of the quads. We sample discrete palette colours rather than
+/// box-averaging/subsampling so adjacent pixels stay identical and merge into
+/// fewer horizontal/vertical runs.
+pub const SLOT_HIGH_CELLS: usize = 32;
 /// The map paper behind the picture (vanilla's map background).
 pub const PAPER: u32 = 0xFF_DCC9A0;
 /// The paper's darker edge.
@@ -907,15 +909,6 @@ enum CachedSlot {
     Rects(Vec<Rect>),
 }
 
-fn colors_hash(colors: &[u8]) -> u64 {
-    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
-    for &b in colors {
-        h ^= u64::from(b);
-        h = h.wrapping_mul(0x0100_0000_01b3);
-    }
-    h
-}
-
 #[derive(Default)]
 struct State {
     settings: Option<Settings>,
@@ -927,8 +920,9 @@ struct State {
     /// Cached pictures of maps seen lately, from the game (retained across frames
     /// so hovering between items never drops a frame or collapses the tooltip).
     maps: HashMap<i32, MapPicture>,
-    /// Unit-origin (`[0.0, 0.0]`) slot geometry keyed by `(map_id, style_key)`.
-    slot_cache: HashMap<(i32, u8), (u64, CachedSlot)>,
+    /// Unit-origin (`[0.0, 0.0]`) slot geometry keyed by `(map_id, style_key)`;
+    /// `set_maps` drops a map's entries when its colours change.
+    slot_cache: HashMap<(i32, u8), CachedSlot>,
     /// The maps asked for since the game patch last ran: it hands over their
     /// pictures next frame.
     wanted: HashSet<i32>,
@@ -1008,17 +1002,15 @@ pub fn with_tilted_slot(
 ) -> Option<()> {
     STATE.with_borrow_mut(|s| {
         let map = s.maps.get(&id)?;
-        let hash = colors_hash(&map.colors);
         let style_key = 0x80 | u8::from(cells == SLOT_HIGH_CELLS);
-        let entry = s.slot_cache.get(&(id, style_key)).filter(|(h, _)| *h == hash);
-        if entry.is_none() {
+        if !s.slot_cache.contains_key(&(id, style_key)) {
             if s.slot_cache.len() > 256 {
                 s.slot_cache.clear();
             }
             let quads = tilted_picture(&map.colors, &s.palette, [0.0, 0.0], cells);
-            s.slot_cache.insert((id, style_key), (hash, CachedSlot::Quads(quads)));
+            s.slot_cache.insert((id, style_key), CachedSlot::Quads(quads));
         }
-        if let Some((_, CachedSlot::Quads(quads))) = s.slot_cache.get(&(id, style_key)) {
+        if let Some(CachedSlot::Quads(quads)) = s.slot_cache.get(&(id, style_key)) {
             for &(pts, argb) in quads {
                 draw(
                     [
@@ -1046,17 +1038,15 @@ pub fn with_flat_slot(
 ) -> Option<()> {
     STATE.with_borrow_mut(|s| {
         let map = s.maps.get(&id)?;
-        let hash = colors_hash(&map.colors);
         let style_key = u8::from(edged) | (u8::from(paper) << 1) | (u8::from(high_res) << 2);
-        let entry = s.slot_cache.get(&(id, style_key)).filter(|(h, _)| *h == hash);
-        if entry.is_none() {
+        if !s.slot_cache.contains_key(&(id, style_key)) {
             if s.slot_cache.len() > 256 {
                 s.slot_cache.clear();
             }
             let rects = slot_rects(&map.colors, &s.palette, [0.0, 0.0], edged, paper, high_res);
-            s.slot_cache.insert((id, style_key), (hash, CachedSlot::Rects(rects)));
+            s.slot_cache.insert((id, style_key), CachedSlot::Rects(rects));
         }
-        if let Some((_, CachedSlot::Rects(rects))) = s.slot_cache.get(&(id, style_key)) {
+        if let Some(CachedSlot::Rects(rects)) = s.slot_cache.get(&(id, style_key)) {
             for &(r, argb) in rects {
                 draw([r[0] + at[0], r[1] + at[1], r[2], r[3]], argb);
             }
